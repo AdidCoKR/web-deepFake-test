@@ -43,8 +43,8 @@ FACE_TRANSFORM = transforms.Compose([
 # Padding (%) di sekitar bounding box wajah agar konteks wajah lebih lengkap
 FACE_PADDING_RATIO = 0.20
 
-# Jumlah frame untuk temporal smoothing (rolling average)
-TEMPORAL_WINDOW = 10
+# Jumlah frame untuk temporal smoothing (rolling average) - 15 frame sesuai permintaan
+TEMPORAL_WINDOW = 15
 
 
 class FaceDeepfakeDetector:
@@ -195,89 +195,53 @@ class FaceDeepfakeDetector:
 
     def _classify_face(self, face_rgb: np.ndarray) -> float:
         """
-        Klasifikasikan crop wajah menggunakan HuggingFace Pipeline.
+        Klasifikasikan crop wajah menggunakan PyTorch Model (timm).
         
         Args:
             face_rgb: Crop wajah dalam format RGB numpy array
             
         Returns:
-            float: Skor keaslian (0.0 = FAKE, 1.0 = REAL)
+            float: Skor keaslian (0.0 = pasti FAKE, 1.0 = pasti REAL)
         """
-        # Konversi numpy array → PIL Image
-        pil_image = Image.fromarray(face_rgb)
-
         try:
-            # Jalankan inferensi menggunakan pipeline transformers
-            # Model: dima806/deepfake_vs_real_image_detection
-            # Label yang dikeluarkan: 'Real' (asli) dan 'Fake' (AI-generated)
-            results = model_loader.face_model(pil_image)
+            # 1. Konversi ke PIL dan Aplikasikan Transformasi
+            pil_image = Image.fromarray(face_rgb)
+            face_tensor = FACE_TRANSFORM(pil_image).unsqueeze(0).to(DEVICE)
             
-            # Log output mentah model untuk debugging
-            logger.info(f"📊 Raw model output: {results}")
-            
-            real_prob = None
-            fake_prob = None
-            
-            for res in results:
-                lbl = str(res.get('label', '')).strip().lower()  # normalisasi lowercase
-                score = float(res.get('score', 0.5))
+            if DEVICE.type == "cuda":
+                face_tensor = face_tensor.half()
                 
-                # dima806 model outputnya: 'Real' → lower = 'real', 'Fake' → lower = 'fake'
-                # Tambahan: support format label lain jaga-jaga
-                is_real = (
-                    lbl == 'real' or lbl == '1' or lbl == 'label_1'
-                    or 'real' in lbl
-                )
-                is_fake = (
-                    lbl == 'fake' or lbl == '0' or lbl == 'label_0'
-                    or 'fake' in lbl or 'ai' in lbl
-                    or 'manipulated' in lbl or 'artificial' in lbl
-                    or 'deepfake' in lbl or 'generated' in lbl
-                )
+            # 2. Jalankan Inferensi PyTorch
+            with torch.no_grad():
+                outputs = model_loader.face_model(face_tensor)
+                # Softmax untuk mendapatkan probabilitas 0-1
+                probs = torch.nn.functional.softmax(outputs, dim=1)
                 
-                if is_real and not is_fake:
-                    real_prob = score
-                elif is_fake:
-                    fake_prob = score
+                # Asumsi index 0 = FAKE, index 1 = REAL. 
+                # (Sesuaikan dengan dataset training Anda)
+                real_prob = probs[0][1].item()
             
-            # Jika top_k=2, kedua label tersedia.
-            # Jika hanya 1 tersedia, hitung komplemen.
-            if real_prob is not None and fake_prob is None:
-                fake_prob = 1.0 - real_prob
-            elif fake_prob is not None and real_prob is None:
-                real_prob = 1.0 - fake_prob
-            elif real_prob is None and fake_prob is None:
-                logger.warning(f"⚠️ Label tidak dikenali: {results}. Gunakan nilai netral 0.5.")
-                real_prob = 0.5
-                fake_prob = 0.5
-            
-            logger.info(
-                f"✅ Hasil deteksi → real={real_prob:.3f} | fake={fake_prob:.3f} "
-                f"| prediksi={'REAL' if real_prob > fake_prob else 'FAKE'}"
-            )
+            logger.info(f"✅ Hasil deteksi → real_prob={real_prob:.3f}")
             return float(real_prob)
             
         except Exception as e:
-            logger.error(f"Error inferensi pipeline: {e}")
+            logger.error(f"Error inferensi PyTorch: {e}")
             return 0.5
 
     def _score_to_label(self, score: float) -> str:
-        """Konversi skor numerik menjadi label teks."""
+        """
+        Konversi skor numerik menjadi label teks dengan Logic Thresholding Dinamis.
+        """
         # score = probabilitas REAL (0.0 = pasti FAKE, 1.0 = pasti REAL)
-        # 
-        # dima806 model dilatih dengan dataset lama (~3 tahun), jadi ada concept drift:
-        # AI modern (Midjourney, DALL-E, dll) bisa lolos dengan score 0.5-0.7.
-        # Solusi: turunkan threshold REAL ke 0.70 dan perbesar zona UNCERTAIN.
-        #
-        #   REAL     : score >= 0.70  → yakin benar-benar asli
-        #   FAKE     : score <= 0.30  → yakin AI-generated
-        #   UNCERTAIN: 0.30 < score < 0.70 → model ragu (kemungkinan AI modern)
-        if score >= 0.70:
+        # Sesuai instruksi: "Berikan label Uncertain/Suspicious jika skor 
+        # berada di rentang 0.4 - 0.7"
+        
+        if score > 0.70:
             return "REAL"
-        elif score <= 0.30:
-            return "FAKE"
-        else:
+        elif 0.40 <= score <= 0.70:
             return "UNCERTAIN"
+        else:
+            return "FAKE"
 
     def _empty_result(self) -> dict:
         """Kembalikan hasil kosong ketika tidak ada wajah terdeteksi."""

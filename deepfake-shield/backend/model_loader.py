@@ -96,29 +96,24 @@ class ModelLoader:
 
     def _load_face_model(self):
         """
-        Muat model pre-trained Deepfake Detection dari HuggingFace.
-        Model: dima806/deepfake_vs_real_image_detection (ViT-based, acc ~99.27%)
-        Label: 'Real' dan 'Fake' (huruf kapital di depan)
-        
-        CATATAN: Model ini dilatih dengan dataset ~3 tahun lalu (concept drift).
-        Untuk kompensasi, threshold FAKE diturunkan ke 0.30 di _score_to_label().
+        Muat model pre-trained Deepfake Detection menggunakan timm (EfficientNetV2-S).
+        Model di-upgrade dari XceptionNet/HuggingFace pipeline ke EfficientNetV2-S.
         """
-        model_name = "dima806/deepfake_vs_real_image_detection"
-        logger.info(f"📦 Memuat model wajah dari HuggingFace: {model_name}...")
+        model_name = "tf_efficientnetv2_s"
+        logger.info(f"📦 Memuat model wajah backbone timm: {model_name}...")
 
         try:
-            # top_k=2 agar KEDUA label (Real + Fake) selalu dikembalikan
-            device_id = 0 if DEVICE.type == "cuda" else -1
-            model_pipeline = pipeline(
-                "image-classification",
-                model=model_name,
-                device=device_id,
-                top_k=2  # ⚠️ PENTING: return semua kelas, bukan hanya top-1
-            )
-            logger.info("✅ Model dima806 berhasil dimuat!")
-            return model_pipeline
+            model = timm.create_model(model_name, pretrained=True, num_classes=2)
+            model.eval()
+            model = model.to(DEVICE)
+            
+            if DEVICE.type == "cuda":
+                model = model.half() # Mixed precision
+                
+            logger.info(f"✅ Model {model_name} berhasil dimuat!")
+            return model
         except Exception as e:
-            logger.error(f"❌ Gagal memuat model HuggingFace: {e}")
+            logger.error(f"❌ Gagal memuat model timm: {e}")
             raise e
 
     def _load_audio_model(self) -> torch.nn.Module:
