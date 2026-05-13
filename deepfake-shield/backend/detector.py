@@ -137,42 +137,28 @@ class FaceDeepfakeDetector:
             if face_crop.size == 0:
                 continue
 
-            # Jalankan model untuk klasifikasi
-            score = self._classify_face(face_crop)
+            # Jalankan model untuk klasifikasi pada crop wajah
+            score = self._classify_image(face_crop)
             face_scores.append(score)
             face_boxes.append([x1, y1, x2 - x1, y2 - y1])
 
-        # Jika tidak ada wajah valid yang berhasil di-crop
-        if not face_scores:
-            return self._empty_result()
-
-        # --- Sistem Voting Mayoritas ---
-        # Threshold per-wajah: wajah dianggap FAKE jika real_prob < 0.50
-        FACE_FAKE_THRESHOLD = 0.50
-        fake_count = sum(1 for s in face_scores if s < FACE_FAKE_THRESHOLD)
-        real_count = len(face_scores) - fake_count
-        total_faces = len(face_scores)
-
+        # --- Step 3: Evaluasi Full Frame ---
+        # Untuk AI Generatif modern (Midjourney/Flux), konteks background seringkali 
+        # lebih mudah dideteksi palsu daripada crop wajah.
+        full_frame_score = self._classify_image(frame_rgb)
+        
+        # --- Sistem Penilaian Agresif ---
+        # Kumpulkan semua score (Full Frame + Wajah)
+        all_scores = [full_frame_score] + face_scores
+        
+        # Ambil nilai probabilitas REAL terkecil (artinya paling FAKE).
+        # Jika salah satu komponen (background/wajah) terdeteksi palsu, anggap palsu.
+        representative_score = float(min(all_scores))
+        
         logger.info(
-            f"🗳️ Voting: {real_count} REAL vs {fake_count} FAKE "
-            f"dari {total_faces} wajah | scores={[round(s,3) for s in face_scores]}"
+            f"📊 Skor: Full Frame={full_frame_score:.3f}, Wajah={[round(s,3) for s in face_scores]} "
+            f"-> Final Score={representative_score:.3f}"
         )
-
-        # Hitung skor representatif berdasarkan voting:
-        # - Jika mayoritas FAKE  → gunakan rata-rata wajah FAKE (skor rendah)
-        # - Jika mayoritas REAL  → gunakan rata-rata wajah REAL (skor tinggi)
-        # - Jika seri (50/50)    → gunakan rata-rata semua (skor tengah = UNCERTAIN)
-        if fake_count > real_count:
-            # Mayoritas FAKE: ambil rata-rata score wajah yang fake
-            fake_scores = [s for s in face_scores if s < FACE_FAKE_THRESHOLD]
-            representative_score = float(np.mean(fake_scores))
-        elif real_count > fake_count:
-            # Mayoritas REAL: ambil rata-rata score wajah yang real
-            real_scores = [s for s in face_scores if s >= FACE_FAKE_THRESHOLD]
-            representative_score = float(np.mean(real_scores))
-        else:
-            # Seri: gunakan rata-rata semua (hasilnya akan UNCERTAIN)
-            representative_score = float(np.mean(face_scores))
 
         # Tambahkan ke buffer temporal smoothing
         self._score_buffer.append(representative_score)
@@ -183,6 +169,9 @@ class FaceDeepfakeDetector:
 
         # Untuk mode foto (buffer=1), pakai raw score langsung
         effective_score = representative_score if len(self._score_buffer) == 1 else smoothed
+        
+        # Hitung jumlah total wajah dari MediaPipe
+        total_faces = len(face_boxes)
 
         return {
             "authenticity_score": round(representative_score, 4),
@@ -193,39 +182,49 @@ class FaceDeepfakeDetector:
             "confidence"        : round(max(effective_score, 1 - effective_score), 4),
         }
 
-    def _classify_face(self, face_rgb: np.ndarray) -> float:
+    def _classify_image(self, rgb_image: np.ndarray) -> float:
         """
-        Klasifikasikan crop wajah menggunakan PyTorch Model (timm).
+        Klasifikasikan gambar menggunakan HuggingFace Pipeline (dima806).
         
         Args:
-            face_rgb: Crop wajah dalam format RGB numpy array
+            rgb_image: Format RGB numpy array (Bisa berupa crop wajah ATAU full frame)
             
         Returns:
             float: Skor keaslian (0.0 = pasti FAKE, 1.0 = pasti REAL)
         """
+        # Konversi numpy array → PIL Image
+        pil_image = Image.fromarray(rgb_image)
+
         try:
-            # 1. Konversi ke PIL dan Aplikasikan Transformasi
-            pil_image = Image.fromarray(face_rgb)
-            face_tensor = FACE_TRANSFORM(pil_image).unsqueeze(0).to(DEVICE)
+            results = model_loader.face_model(pil_image)
             
-            if DEVICE.type == "cuda":
-                face_tensor = face_tensor.half()
-                
-            # 2. Jalankan Inferensi PyTorch
-            with torch.no_grad():
-                outputs = model_loader.face_model(face_tensor)
-                # Softmax untuk mendapatkan probabilitas 0-1
-                probs = torch.nn.functional.softmax(outputs, dim=1)
-                
-                # Asumsi index 0 = FAKE, index 1 = REAL. 
-                # (Sesuaikan dengan dataset training Anda)
-                real_prob = probs[0][1].item()
+            real_prob = None
+            fake_prob = None
             
-            logger.info(f"✅ Hasil deteksi → real_prob={real_prob:.3f}")
+            for res in results:
+                lbl = str(res.get('label', '')).strip().lower()
+                score = float(res.get('score', 0.5))
+                
+                is_real = lbl in ['real', '1', 'label_1'] or 'real' in lbl
+                is_fake = lbl in ['fake', '0', 'label_0'] or 'fake' in lbl or 'ai' in lbl or 'manipulated' in lbl
+                
+                if is_real and not is_fake:
+                    real_prob = score
+                elif is_fake:
+                    fake_prob = score
+            
+            # Normalisasi probabilitas jika salah satu kosong
+            if real_prob is not None and fake_prob is None:
+                fake_prob = 1.0 - real_prob
+            elif fake_prob is not None and real_prob is None:
+                real_prob = 1.0 - fake_prob
+            elif real_prob is None and fake_prob is None:
+                real_prob = 0.5
+                
             return float(real_prob)
             
         except Exception as e:
-            logger.error(f"Error inferensi PyTorch: {e}")
+            logger.error(f"Error inferensi pipeline HF: {e}")
             return 0.5
 
     def _score_to_label(self, score: float) -> str:

@@ -96,24 +96,25 @@ class ModelLoader:
 
     def _load_face_model(self):
         """
-        Muat model pre-trained Deepfake Detection menggunakan timm (EfficientNetV2-S).
-        Model di-upgrade dari XceptionNet/HuggingFace pipeline ke EfficientNetV2-S.
+        Muat model pre-trained Deepfake & AI Image Detection dari HuggingFace.
+        Kita menggunakan dima806/deepfake_vs_real_image_detection yang sangat bagus
+        untuk mendeteksi AI generatif (Midjourney/Flux).
         """
-        model_name = "tf_efficientnetv2_s"
-        logger.info(f"📦 Memuat model wajah backbone timm: {model_name}...")
+        model_name = "dima806/deepfake_vs_real_image_detection"
+        logger.info(f"📦 Memuat model AI dari HuggingFace: {model_name}...")
 
         try:
-            model = timm.create_model(model_name, pretrained=True, num_classes=2)
-            model.eval()
-            model = model.to(DEVICE)
-            
-            if DEVICE.type == "cuda":
-                model = model.half() # Mixed precision
-                
+            device_id = 0 if DEVICE.type == "cuda" else -1
+            model_pipeline = pipeline(
+                "image-classification",
+                model=model_name,
+                device=device_id,
+                top_k=2  # Return semua kelas (Real dan Fake)
+            )
             logger.info(f"✅ Model {model_name} berhasil dimuat!")
-            return model
+            return model_pipeline
         except Exception as e:
-            logger.error(f"❌ Gagal memuat model timm: {e}")
+            logger.error(f"❌ Gagal memuat model HuggingFace: {e}")
             raise e
 
     def _load_audio_model(self) -> torch.nn.Module:
