@@ -1,0 +1,28 @@
+{
+  "name": "deepfake-shield",
+  "version": "1.0.0",
+  "description": "Platform deteksi deepfake berbasis AI yang berjalan secara lokal dengan akselerasi GPU.",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "dev": "concurrently \"npm run frontend\" \"npm run backend\"",
+    "frontend": "cd frontend && npm run dev",
+    "backend": "cd backend && uvicorn main:app --reload",
+    "start": "cd frontend && npm run build && npm run start"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/AdidCoKR/ai-models-project.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/AdidCoKR/ai-models-project/issues"
+  },
+  "homepage": "https://github.com/AdidCoKR/ai-models-project#readme"
+}

@@ -1,0 +1,9 @@
+"""
+File kosong placeholder untuk direktori models/
+Model weights akan di-download secara otomatis oleh timm saat pertama kali dijalankan.
+
+EfficientNet-B4 ImageNet weights: ~74MB
+MobileNetV3-Small ImageNet weights: ~9MB
+
+File ini di-gitignore karena ukurannya besar.
+"""

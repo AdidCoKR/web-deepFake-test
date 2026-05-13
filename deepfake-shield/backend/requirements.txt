@@ -1,0 +1,38 @@
+# ============================================================
+# Deepfake Shield - Backend Dependencies
+# Dioptimalkan untuk NVIDIA RTX 3050 Ti (4GB VRAM, CUDA 12.1)
+# ============================================================
+
+# --- Web Framework & Server ---
+fastapi==0.111.0              # High-performance async web framework
+uvicorn[standard]==0.29.0     # ASGI server dengan WebSocket support
+python-multipart==0.0.9       # Form data & file upload support
+websockets==12.0              # WebSocket protocol
+
+# --- Deep Learning (PyTorch + CUDA 12.1) ---
+# PENTING: Install PyTorch via perintah khusus di bawah, bukan pip install biasa
+# pip install torch==2.2.2+cu121 torchvision==0.17.2+cu121 --index-url https://download.pytorch.org/whl/cu121
+torch==2.2.2                  # PyTorch (pastikan versi CUDA sesuai)
+torchvision==0.17.2           # Torchvision untuk transformasi gambar
+timm==0.9.16                  # Library model vision (EfficientNet, dll)
+transformers==4.40.0          # HuggingFace pipeline untuk Deepfake detection
+
+# --- Computer Vision ---
+opencv-python-headless==4.9.0.80   # OpenCV tanpa GUI (lebih ringan)
+mediapipe==0.10.14                 # Google MediaPipe untuk face tracking
+Pillow==10.3.0                     # Image processing
+
+# --- Audio Processing ---
+librosa==0.10.2               # Audio analysis & mel-spectrogram
+soundfile==0.12.1             # Membaca/menulis file audio
+scipy==1.13.0                 # Scientific computing (dibutuhkan librosa)
+
+# --- Data Processing ---
+numpy==1.26.4                 # Array computation
+pandas==2.2.2                 # Data manipulation (opsional, untuk logging)
+
+# --- Utilities ---
+python-dotenv==1.0.1          # Membaca file .env
+aiofiles==23.2.1              # Async file I/O
+pydantic==2.7.1               # Data validation (built-in di FastAPI)
+httpx==0.27.0                 # Async HTTP client

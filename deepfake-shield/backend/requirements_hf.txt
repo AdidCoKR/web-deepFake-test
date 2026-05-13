@@ -1,0 +1,32 @@
+# Deepfake Shield - Backend untuk Hugging Face Spaces
+# Requirements yang ringan (tanpa CUDA, pakai CPU di HF Spaces tier gratis)
+
+# --- Web Framework ---
+fastapi==0.111.0
+uvicorn[standard]==0.29.0
+python-multipart==0.0.9
+
+# --- Deep Learning (CPU version untuk HF Spaces gratis) ---
+torch==2.2.2
+torchvision==0.17.2
+timm==0.9.16
+transformers==4.40.0
+
+# --- Computer Vision ---
+opencv-python-headless==4.9.0.80
+mediapipe==0.10.14
+Pillow==10.3.0
+
+# --- Audio Processing ---
+librosa==0.10.2
+soundfile==0.12.1
+scipy==1.13.0
+
+# --- Data Processing ---
+numpy==1.26.4
+
+# --- Utilities ---
+python-dotenv==1.0.1
+aiofiles==23.2.1
+pydantic==2.7.1
+httpx==0.27.0
