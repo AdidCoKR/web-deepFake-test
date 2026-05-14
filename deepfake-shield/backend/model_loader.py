@@ -53,7 +53,8 @@ class ModelLoader:
     Memastikan model hanya dimuat satu kali ke VRAM.
     """
     _instance = None          # Referensi singleton
-    _face_model = None        # Model klasifikasi wajah deepfake
+    _face_deepfake_model = None  # Model klasifikasi wajah deepfake utama (Wvolf)
+    _face_deepfake_model_2 = None   # Model klasifikasi wajah deepfake kedua (prithiv)
     _audio_model = None       # Model klasifikasi suara deepfake
     _is_initialized = False   # Flag apakah sudah diinisialisasi
 
@@ -75,8 +76,9 @@ class ModelLoader:
         logger.info(f"🚀 Menginisialisasi ModelLoader pada device: {DEVICE}")
         self._log_device_info()
 
-        # Muat model klasifikasi wajah
-        self._face_model = self._load_face_model()
+        # Muat 2 model klasifikasi wajah khusus Deepfake
+        self._face_deepfake_model = self._load_model_pipeline("Wvolf/ViT_Deepfake_Detection", "Deepfake 1 (Wvolf)")
+        self._face_deepfake_model_2 = self._load_model_pipeline("prithivMLmods/deepfake-detector-model-v1", "Deepfake 2 (Prithiv)")
 
         # Muat model klasifikasi audio (CNN sederhana)
         self._audio_model = self._load_audio_model()
@@ -94,14 +96,11 @@ class ModelLoader:
         else:
             logger.warning("⚠️ CUDA tidak tersedia. Menggunakan CPU (performa lebih lambat).")
 
-    def _load_face_model(self):
+    def _load_model_pipeline(self, model_name: str, desc: str):
         """
-        Muat model pre-trained Deepfake & AI Image Detection dari HuggingFace.
-        Kita menggunakan dima806/deepfake_vs_real_image_detection yang sangat bagus
-        untuk mendeteksi AI generatif (Midjourney/Flux).
+        Muat model pre-trained pipeline dari HuggingFace.
         """
-        model_name = "dima806/deepfake_vs_real_image_detection"
-        logger.info(f"📦 Memuat model AI dari HuggingFace: {model_name}...")
+        logger.info(f"📦 Memuat model {desc} dari HuggingFace: {model_name}...")
 
         try:
             device_id = 0 if DEVICE.type == "cuda" else -1
@@ -111,10 +110,10 @@ class ModelLoader:
                 device=device_id,
                 top_k=2  # Return semua kelas (Real dan Fake)
             )
-            logger.info(f"✅ Model {model_name} berhasil dimuat!")
+            logger.info(f"✅ Model {desc} ({model_name}) berhasil dimuat!")
             return model_pipeline
         except Exception as e:
-            logger.error(f"❌ Gagal memuat model HuggingFace: {e}")
+            logger.error(f"❌ Gagal memuat model {desc}: {e}")
             raise e
 
     def _load_audio_model(self) -> torch.nn.Module:
@@ -143,11 +142,18 @@ class ModelLoader:
         return model
 
     @property
-    def face_model(self):
-        """Akses model wajah yang sudah dimuat."""
+    def face_deepfake_model(self):
+        """Akses model deepfake utama yang sudah dimuat."""
         if not self._is_initialized:
             raise RuntimeError("ModelLoader belum diinisialisasi! Panggil .initialize() dulu.")
-        return self._face_model
+        return self._face_deepfake_model
+
+    @property
+    def face_deepfake_model_2(self):
+        """Akses model deepfake kedua yang sudah dimuat."""
+        if not self._is_initialized:
+            raise RuntimeError("ModelLoader belum diinisialisasi! Panggil .initialize() dulu.")
+        return self._face_deepfake_model_2
 
     @property
     def audio_model(self) -> torch.nn.Module:

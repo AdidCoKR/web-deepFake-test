@@ -9,7 +9,7 @@
 
 $HF_USERNAME   = "adidtiya"
 $HF_SPACE_NAME = "deepfake-shield-api"
-$HF_TOKEN      = "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"   # dari https://huggingface.co/settings/tokens
+$HF_TOKEN      = "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"   # dari https://huggingface.co/settings/tokens
 
 # --- Validasi ---
 if ($HF_USERNAME -eq "GANTI_DENGAN_USERNAME_HF_KAMU") {

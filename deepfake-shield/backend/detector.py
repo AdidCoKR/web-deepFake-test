@@ -137,28 +137,43 @@ class FaceDeepfakeDetector:
             if face_crop.size == 0:
                 continue
 
-            # Jalankan model untuk klasifikasi pada crop wajah
-            score = self._classify_image(face_crop)
+            # Jalankan kedua model khusus Deepfake
+            df1_score = self._classify_image(face_crop, model_loader.face_deepfake_model)
+            df2_score = self._classify_image(face_crop, model_loader.face_deepfake_model_2)
+            
+            # Gunakan rata-rata berbobot sama dari kedua model deepfake
+            # Keduanya dirancang untuk wajah, sehingga rata-ratanya lebih kuat.
+            score = (df1_score + df2_score) / 2.0
+            
             face_scores.append(score)
             face_boxes.append([x1, y1, x2 - x1, y2 - y1])
 
-        # --- Step 3: Evaluasi Full Frame ---
-        # Untuk AI Generatif modern (Midjourney/Flux), konteks background seringkali 
-        # lebih mudah dideteksi palsu daripada crop wajah.
-        full_frame_score = self._classify_image(frame_rgb)
+        # --- Sistem Penilaian Komprehensif ---
+        # Model-model yang kita gunakan (Wvolf & Prithiv) dilatih khusus untuk wajah.
+        # Menjalankan model wajah pada full-frame sering memberikan skor acak/tinggi (false real).
+        # Oleh karena itu, prioritas utama adalah skor dari potongan wajah.
         
-        # --- Sistem Penilaian Agresif ---
-        # Kumpulkan semua score (Full Frame + Wajah)
-        all_scores = [full_frame_score] + face_scores
-        
-        # Ambil nilai probabilitas REAL terkecil (artinya paling FAKE).
-        # Jika salah satu komponen (background/wajah) terdeteksi palsu, anggap palsu.
-        representative_score = float(min(all_scores))
-        
-        logger.info(
-            f"📊 Skor: Full Frame={full_frame_score:.3f}, Wajah={[round(s,3) for s in face_scores]} "
-            f"-> Final Score={representative_score:.3f}"
-        )
+        if len(face_scores) > 0:
+            # Jika ada wajah terdeteksi, kita ambil skor terendah (probabilitas REAL terkecil).
+            # Karena jika ada 1 saja wajah yang FAKE, maka seluruh gambar/video dianggap FAKE.
+            representative_score = float(min(face_scores))
+            
+            # Kita tidak mencampur dengan full_frame_score karena model wajah tidak cocok
+            # untuk full-frame yang memiliki background luas (sering salah tebak REAL).
+            
+            logger.info(
+                f"📊 Skor Wajah={[round(s,3) for s in face_scores]} "
+                f"-> Final Score (Min)={representative_score:.3f}"
+            )
+        else:
+            # Jika sama sekali tidak ada wajah, sebagai fallback kita cek full frame.
+            # Walaupun kurang akurat, ini lebih baik daripada tidak sama sekali.
+            df1_full_score = self._classify_image(frame_rgb, model_loader.face_deepfake_model)
+            df2_full_score = self._classify_image(frame_rgb, model_loader.face_deepfake_model_2)
+            full_frame_score = (df1_full_score + df2_full_score) / 2.0
+            
+            representative_score = full_frame_score
+            logger.info(f"📊 Skor: Tidak ada wajah. Full Frame Score={representative_score:.3f}")
 
         # Tambahkan ke buffer temporal smoothing
         self._score_buffer.append(representative_score)
@@ -182,12 +197,13 @@ class FaceDeepfakeDetector:
             "confidence"        : round(max(effective_score, 1 - effective_score), 4),
         }
 
-    def _classify_image(self, rgb_image: np.ndarray) -> float:
+    def _classify_image(self, rgb_image: np.ndarray, model_pipeline) -> float:
         """
-        Klasifikasikan gambar menggunakan HuggingFace Pipeline (dima806).
+        Klasifikasikan gambar menggunakan HuggingFace Pipeline yang diberikan.
         
         Args:
             rgb_image: Format RGB numpy array (Bisa berupa crop wajah ATAU full frame)
+            model_pipeline: HuggingFace pipeline yang akan digunakan (Deepfake atau AI Edit)
             
         Returns:
             float: Skor keaslian (0.0 = pasti FAKE, 1.0 = pasti REAL)
@@ -196,7 +212,7 @@ class FaceDeepfakeDetector:
         pil_image = Image.fromarray(rgb_image)
 
         try:
-            results = model_loader.face_model(pil_image)
+            results = model_pipeline(pil_image)
             
             real_prob = None
             fake_prob = None

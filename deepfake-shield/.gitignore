@@ -18,3 +18,6 @@ frontend/out/
 # OS files
 .DS_Store
 Thumbs.db
+
+# Hugging Face Cache
+backend/models/hf_cache/
