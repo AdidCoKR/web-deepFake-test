@@ -141,9 +141,10 @@ class FaceDeepfakeDetector:
             df1_score = self._classify_image(face_crop, model_loader.face_deepfake_model)
             df2_score = self._classify_image(face_crop, model_loader.face_deepfake_model_2)
             
-            # Gunakan rata-rata berbobot sama dari kedua model deepfake
-            # Keduanya dirancang untuk wajah, sehingga rata-ratanya lebih kuat.
-            score = (df1_score + df2_score) / 2.0
+            # Model 2 (Prithiv) sering memberikan 'False Positive' pada wajah asli yang jernih.
+            # Jadi kita berikan bobot lebih besar ke Model 1 (Wvolf) yang lebih seimbang.
+            # Bobot: 70% Model 1, 30% Model 2.
+            score = (df1_score * 0.7) + (df2_score * 0.3)
             
             face_scores.append(score)
             face_boxes.append([x1, y1, x2 - x1, y2 - y1])
@@ -154,16 +155,17 @@ class FaceDeepfakeDetector:
         # Oleh karena itu, prioritas utama adalah skor dari potongan wajah.
         
         if len(face_scores) > 0:
-            # Jika ada wajah terdeteksi, kita ambil skor terendah (probabilitas REAL terkecil).
-            # Karena jika ada 1 saja wajah yang FAKE, maka seluruh gambar/video dianggap FAKE.
-            representative_score = float(min(face_scores))
+            # Jika ada banyak wajah, mengambil min() akan menyebabkan foto grup yang asli 
+            # menjadi FAKE hanya karena 1 wajah buram/menghadap samping (skor rendah).
+            # Menggunakan rata-rata (mean) jauh lebih stabil untuk foto grup.
+            representative_score = float(np.mean(face_scores))
             
             # Kita tidak mencampur dengan full_frame_score karena model wajah tidak cocok
             # untuk full-frame yang memiliki background luas (sering salah tebak REAL).
             
             logger.info(
                 f"📊 Skor Wajah={[round(s,3) for s in face_scores]} "
-                f"-> Final Score (Min)={representative_score:.3f}"
+                f"-> Final Score (Mean)={representative_score:.3f}"
             )
         else:
             # Jika sama sekali tidak ada wajah, sebagai fallback kita cek full frame.
